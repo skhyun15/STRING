@@ -76,3 +76,6 @@ browser_info/
 document/
 *.thy~
 '@ | Set-Content .gitignore -Encoding utf8
+
+# Upstream Explanation-Refiner clone
+/explanation_refinement/
