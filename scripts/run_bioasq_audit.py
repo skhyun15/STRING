@@ -11,6 +11,120 @@ from string_agent.integration.explanation_refiner import _load_openai_configurat
 from openai import OpenAI
 
 ALLOWED_GROUNDING = {"DIRECTLY_SUPPORTED", "COMPOSITIONALLY_SUPPORTED", "PARTIALLY_SUPPORTED", "CONTRADICTED", "UNGROUNDED", "OVERSTATED", "UNKNOWN"}
+ALLOWED_ACCEPTANCE = {"ACCEPTED", "ACCEPTED_WITH_ASSUMPTION", "REJECTED", "NOT_EVALUATED"}
+ALLOWED_BRIDGE = {"EXPLICIT", "REASONABLE_BUT_UNSTATED", "UNSUPPORTED"}
+
+
+class ModelOutputValidationError(ValueError):
+    code = "MODEL_OUTPUT_VALIDATION_ERROR"
+
+    def __init__(self, message: str, *, path: str = "$") -> None:
+        self.path = path
+        super().__init__(f"{self.code} at {path}: {message}")
+
+    def as_dict(self) -> dict:
+        return {"code": self.code, "path": self.path, "message": str(self)}
+
+
+def _require(value: object, expected: type, path: str) -> object:
+    if not isinstance(value, expected):
+        raise ModelOutputValidationError(
+            f"expected {expected.__name__}, got {type(value).__name__}", path=path
+        )
+    return value
+
+
+def validate_generation_output(generated: dict, valid_evidence_ids: set[str]) -> None:
+    _require(generated, dict, "$")
+    claims = generated.get("atomic_claims")
+    _require(claims, list, "$.atomic_claims")
+    if not claims:
+        raise ModelOutputValidationError("must not be empty", path="$.atomic_claims")
+    for index, claim in enumerate(claims):
+        path = f"$.atomic_claims[{index}]"
+        _require(claim, dict, path)
+        for field in ("claim_id", "text"):
+            value = claim.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ModelOutputValidationError("must be a non-empty string", path=f"{path}.{field}")
+        evidence_ids = claim.get("evidence_ids")
+        _require(evidence_ids, list, f"{path}.evidence_ids")
+        if not all(isinstance(item, str) for item in evidence_ids):
+            raise ModelOutputValidationError("must contain strings", path=f"{path}.evidence_ids")
+        if not set(evidence_ids) <= valid_evidence_ids:
+            raise ModelOutputValidationError("contains an unknown evidence ID", path=f"{path}.evidence_ids")
+
+
+def validate_raw_audit_output(audited: dict) -> None:
+    _require(audited, dict, "$")
+    claims = audited.get("claims")
+    _require(claims, list, "$.claims")
+    refined = audited.get("refined_claims", [])
+    _require(refined, list, "$.refined_claims")
+    for group_name, group in (("claims", claims), ("refined_claims", refined)):
+        for index, claim in enumerate(group):
+            path = f"$.{group_name}[{index}]"
+            _require(claim, dict, path)
+            for field in ("claim_id", "text", "grounding_status", "acceptance_status"):
+                value = claim.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    raise ModelOutputValidationError("must be a non-empty string", path=f"{path}.{field}")
+            evidence_ids = claim.get("evidence_ids")
+            _require(evidence_ids, list, f"{path}.evidence_ids")
+    if "refined_answer" not in audited or audited["refined_answer"] is not None and not isinstance(audited["refined_answer"], str):
+        raise ModelOutputValidationError("must be a string or null", path="$.refined_answer")
+
+
+def validate_audit_output(audited: dict, valid_evidence_ids: set[str]) -> None:
+    _require(audited, dict, "$")
+    claims = audited.get("claims")
+    _require(claims, list, "$.claims")
+    refined = audited.get("refined_claims", [])
+    _require(refined, list, "$.refined_claims")
+    original_ids: set[str] = set()
+    for group_name, group in (("claims", claims), ("refined_claims", refined)):
+        for index, claim in enumerate(group):
+            path = f"$.{group_name}[{index}]"
+            _require(claim, dict, path)
+            for field in ("claim_id", "text"):
+                value = claim.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    raise ModelOutputValidationError("must be a non-empty string", path=f"{path}.{field}")
+            evidence_ids = claim.get("evidence_ids")
+            _require(evidence_ids, list, f"{path}.evidence_ids")
+            if not all(isinstance(item, str) for item in evidence_ids):
+                raise ModelOutputValidationError("must contain strings", path=f"{path}.evidence_ids")
+            if not set(evidence_ids) <= valid_evidence_ids:
+                raise ModelOutputValidationError("contains an unknown evidence ID", path=f"{path}.evidence_ids")
+            grounding = claim.get("grounding_status")
+            if grounding not in ALLOWED_GROUNDING:
+                raise ModelOutputValidationError(f"invalid grounding status {grounding!r}", path=f"{path}.grounding_status")
+            acceptance = claim.get("acceptance_status")
+            if acceptance not in ALLOWED_ACCEPTANCE:
+                raise ModelOutputValidationError(f"invalid acceptance status {acceptance!r}", path=f"{path}.acceptance_status")
+            bridge = claim.get("bridge_assumption") or {}
+            _require(bridge, dict, f"{path}.bridge_assumption")
+            if bridge and bridge.get("status") not in ALLOWED_BRIDGE:
+                raise ModelOutputValidationError("invalid bridge status", path=f"{path}.bridge_assumption.status")
+            if group_name == "claims":
+                if claim["claim_id"] in original_ids:
+                    raise ModelOutputValidationError("duplicate claim ID", path=f"{path}.claim_id")
+                original_ids.add(claim["claim_id"])
+    for index, claim in enumerate(refined):
+        previous = claim.get("previous_claim_id")
+        if not isinstance(previous, str) or previous not in original_ids:
+            raise ModelOutputValidationError(
+                "must reference an existing original claim ID",
+                path=f"$.refined_claims[{index}].previous_claim_id",
+            )
+    if "refined_answer" not in audited or audited["refined_answer"] is not None and not isinstance(audited["refined_answer"], str):
+        raise ModelOutputValidationError("must be a string or null", path="$.refined_answer")
+    conclusion = audited.get("conclusion_status")
+    _require(conclusion, dict, "$.conclusion_status")
+    if conclusion.get("grounding_status") not in ALLOWED_GROUNDING:
+        raise ModelOutputValidationError("invalid grounding status", path="$.conclusion_status.grounding_status")
+    if conclusion.get("acceptance_status") not in ALLOWED_ACCEPTANCE:
+        raise ModelOutputValidationError("invalid acceptance status", path="$.conclusion_status.acceptance_status")
 
 def load_question(path: Path, question_id: str) -> dict:
     questions = json.loads(path.read_text(encoding="utf-8"))["questions"]
@@ -46,7 +160,6 @@ def build_graph(q: dict, generated: dict, audited: dict) -> dict:
     nodes=[{"id":"question","type":"QUESTION","label":q["body"],"grounding_status":"NOT_APPLICABLE","acceptance_status":"ACCEPTED","verifier_status":"NOT_APPLICABLE"}]
     edges=[]
     for s in q["snippets"]: nodes.append({"id":s["id"],"type":"EVIDENCE_SNIPPET","label":s["text"],"grounding_status":"SOURCE","acceptance_status":"ACCEPTED","verifier_status":"NOT_APPLICABLE"})
-    claims={c["claim_id"]:c for c in audited["claims"]}
     for c in audited["claims"]:
         nodes.append({"id":c["claim_id"],"type":"ANSWER_CLAIM","label":c["text"],"grounding_status":c["grounding_status"],"acceptance_status":c["acceptance_status"],"verifier_status":"NOT_APPLICABLE"})
         relation="supports" if c["grounding_status"] in {"DIRECTLY_SUPPORTED","COMPOSITIONALLY_SUPPORTED"} else "partially_supports"
@@ -67,14 +180,31 @@ def build_graph(q: dict, generated: dict, audited: dict) -> dict:
         rid="refined-"+c["claim_id"]
         nodes.append({"id":rid,"type":"REFINED_CLAIM","label":c["text"],"grounding_status":c["grounding_status"],"acceptance_status":c["acceptance_status"],"verifier_status":"NOT_APPLICABLE"})
         if c.get("previous_claim_id"): edges.append({"source":c["previous_claim_id"],"target":rid,"type":"revised_to"})
-        for eid in c.get("evidence_ids",[]): edges.append({"source":eid,"target":rid,"type":"supports"})
+        relation = "supports" if c["acceptance_status"] == "ACCEPTED" else "partially_supports"
+        for eid in c.get("evidence_ids",[]): edges.append({"source":eid,"target":rid,"type":relation})
     conclusion=audited["conclusion_status"]
     nodes.append({"id":"conclusion","type":"CONCLUSION","label":audited["refined_answer"],"grounding_status":conclusion["grounding_status"],"acceptance_status":conclusion["acceptance_status"],"verifier_status":"NOT_APPLICABLE"})
-    for c in audited.get("refined_claims",[]): edges.append({"source":"refined-"+c["claim_id"],"target":"conclusion","type":"derived_from"})
-    return {"nodes":nodes,"edges":edges}
+    effective = audited.get("refined_claims") or audited["claims"]
+    refined_mode = bool(audited.get("refined_claims"))
+    for c in effective:
+        if c["acceptance_status"] == "ACCEPTED":
+            source = "refined-" + c["claim_id"] if refined_mode else c["claim_id"]
+            edges.append({"source":source,"target":"conclusion","type":"supports"})
+    graph = {"nodes":nodes,"edges":edges}
+    node_ids = {node["id"] for node in nodes}
+    for edge in edges:
+        assert edge["source"] in node_ids, f"missing graph source node: {edge['source']}"
+        assert edge["target"] in node_ids, f"missing graph target node: {edge['target']}"
+    return graph
 
-def normalize_audit(audited: dict) -> dict:
-    grounding_aliases = {"DIRECT": "DIRECTLY_SUPPORTED", "COMPOSITIONAL": "COMPOSITIONALLY_SUPPORTED", "PARTIAL": "PARTIALLY_SUPPORTED"}
+def normalize_audit(audited: dict, valid_evidence_ids: set[str] | None = None) -> dict:
+    grounding_aliases = {
+        "DIRECT": "DIRECTLY_SUPPORTED",
+        "COMPOSITIONAL": "COMPOSITIONALLY_SUPPORTED",
+        "INDIRECT": "COMPOSITIONALLY_SUPPORTED",
+        "INDIRECTLY_SUPPORTED": "COMPOSITIONALLY_SUPPORTED",
+        "PARTIAL": "PARTIALLY_SUPPORTED",
+    }
     for claim in audited.get("claims", []) + audited.get("refined_claims", []):
         claim["grounding_status"] = str(claim.get("grounding_status", "UNKNOWN")).upper()
         claim["grounding_status"] = grounding_aliases.get(claim["grounding_status"], claim["grounding_status"])
@@ -84,8 +214,14 @@ def normalize_audit(audited: dict) -> dict:
         bridge=claim.get("bridge_assumption") or {}
         if bridge:
             bridge["status"]=str(bridge.get("status","UNSUPPORTED")).upper()
-        if claim["grounding_status"] == "DIRECTLY_SUPPORTED":
+        evidence_ids = claim.get("evidence_ids", [])
+        evidence_valid = bool(evidence_ids) and (
+            valid_evidence_ids is None or set(evidence_ids) <= valid_evidence_ids
+        )
+        if claim["grounding_status"] == "DIRECTLY_SUPPORTED" and evidence_valid:
             claim["acceptance_status"] = "ACCEPTED"
+        elif claim["grounding_status"] in {"CONTRADICTED", "UNGROUNDED", "OVERSTATED"}:
+            claim["acceptance_status"] = "REJECTED"
         bridge_status=bridge.get("status")
         claim["intermediate_acceptance_status"] = (
             "ACCEPTED_WITH_ASSUMPTION" if bridge_status == "REASONABLE_BUT_UNSTATED"
@@ -95,7 +231,9 @@ def normalize_audit(audited: dict) -> dict:
     source_claims=audited.get("claims", [])
     intermediate_statuses=[c.get("intermediate_acceptance_status") for c in source_claims if c.get("intermediate_inference")]
     refined=audited.get("refined_claims", [])
-    base_accepted=bool(refined) and all(c.get("acceptance_status") == "ACCEPTED" for c in refined)
+    effective_claims = refined or source_claims
+    accepted_claims = [c for c in effective_claims if c.get("acceptance_status") == "ACCEPTED"]
+    base_accepted = bool(accepted_claims)
     if "REJECTED" in intermediate_statuses or not base_accepted:
         conclusion_acceptance="REJECTED"
     elif "ACCEPTED_WITH_ASSUMPTION" in intermediate_statuses:
@@ -103,7 +241,7 @@ def normalize_audit(audited: dict) -> dict:
     else:
         conclusion_acceptance="ACCEPTED"
     audited["conclusion_status"]={
-        "grounding_status": "COMPOSITIONALLY_SUPPORTED" if len(refined) > 1 else (refined[0]["grounding_status"] if refined else "UNKNOWN"),
+        "grounding_status": "COMPOSITIONALLY_SUPPORTED" if len(accepted_claims) > 1 else (accepted_claims[0]["grounding_status"] if accepted_claims else "UNKNOWN"),
         "acceptance_status": conclusion_acceptance,
         "verifier_status": "NOT_APPLICABLE",
     }
@@ -118,16 +256,20 @@ def main() -> int:
     _load_openai_configuration(ROOT/"explanation_refinement","gpt-4.1"); client=OpenAI()
     prompt1=generation_prompt(q); event("answer_generation","start"); generated,raw,u=_call(client,prompt1); calls+=1; usage.append(u); event("answer_generation","end")
     with debug.open("a",encoding="utf-8") as f: f.write(json.dumps({"phase":"answer_generation","raw_response":raw},ensure_ascii=False)+"\n")
-    if not generated.get("atomic_claims"): raise RuntimeError("no atomic claims generated")
-    prompt2=audit_prompt(q,generated); event("grounding_refinement","start"); audited,raw,u=_call(client,prompt2); calls+=1; usage.append(u); event("grounding_refinement","end"); audited=normalize_audit(audited)
-    with debug.open("a",encoding="utf-8") as f: f.write(json.dumps({"phase":"grounding_refinement","raw_response":raw},ensure_ascii=False)+"\n")
     valid_ids={s["id"] for s in q["snippets"]}
-    for c in audited["claims"]+audited.get("refined_claims",[]):
-        if c["grounding_status"] not in ALLOWED_GROUNDING or not set(c.get("evidence_ids",[]))<=valid_ids: raise RuntimeError("invalid grounding output")
+    validate_generation_output(generated, valid_ids)
+    prompt2=audit_prompt(q,generated); event("grounding_refinement","start"); audited,raw,u=_call(client,prompt2); calls+=1; usage.append(u); event("grounding_refinement","end"); validate_raw_audit_output(audited); audited=normalize_audit(audited, valid_ids)
+    with debug.open("a",encoding="utf-8") as f: f.write(json.dumps({"phase":"grounding_refinement","raw_response":raw},ensure_ascii=False)+"\n")
+    validate_audit_output(audited, valid_ids)
     graph=build_graph(q,generated,audited); runtime=time.perf_counter()-started
     artifact={"schema_version":1,"run_id":args.run_id,"input":q,"generation_prompt_excludes_gold":("ideal_answer" not in prompt1 and "exact_answer" not in prompt1),"generated":generated,"grounding":audited["claims"],"refinement":{"summary":audited.get("refinement_summary"),"metadata":audited.get("refinement_metadata"),"refined_answer":audited["refined_answer"],"refined_claims":audited.get("refined_claims",[])},"conclusion_status":audited["conclusion_status"],"final_accepted_answer":audited["refined_answer"],"verifier_status":"NOT_APPLICABLE","posthoc_gold_comparison":{"ideal_answer":q["ideal_answer"],"exact_answer":q["exact_answer"]},"api_calls":calls,"usage":usage,"runtime_seconds":runtime}
     (out/"artifact.json").write_text(json.dumps(artifact,ensure_ascii=False,indent=2),encoding="utf-8"); (out/"graph.json").write_text(json.dumps(graph,ensure_ascii=False,indent=2),encoding="utf-8")
-    (out/"index.html").write_text("""<!doctype html><meta charset=utf-8><script src='https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js'></script><h1>BioASQ Evidence Audit</h1><pre id=m></pre><div id=g style='height:600px'></div><script>Promise.all(['artifact.json','graph.json'].map(x=>fetch(x).then(r=>r.json()))).then(([a,x])=>{m.textContent=JSON.stringify({question:a.input.body,generated:a.generated.concise_answer,final:a.final_accepted_answer,gold:a.posthoc_gold_comparison},null,2);cytoscape({container:g,elements:[...x.nodes.map(n=>({data:n})),...x.edges.map((e,i)=>({data:{id:'e'+i,...e}}))],style:[{selector:'node',style:{label:'data(label)','text-wrap':'wrap','text-max-width':220}},{selector:'edge',style:{label:'data(type)','target-arrow-shape':'triangle','curve-style':'bezier'}}],layout:{name:'cose'}})})</script>""",encoding="utf-8")
+    # Keep the BioASQ presentation in the frontend template so generated runs
+    # all receive the same auditable dashboard without changing artifact data.
+    template = ROOT / "demo" / "bioasq.html"
+    if not template.exists():
+        raise FileNotFoundError(f"BioASQ renderer template missing: {template}")
+    (out / "index.html").write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
     print(json.dumps({"answer":generated["concise_answer"],"claims":len(audited["claims"]),"accepted":sum(c["acceptance_status"]=="ACCEPTED" for c in audited["claims"]),"api_calls":calls,"runtime":runtime,"output":str(out)},ensure_ascii=False))
     return 0
 if __name__=="__main__": raise SystemExit(main())

@@ -60,17 +60,29 @@ See [docs/architecture.md](docs/architecture.md) for component boundaries.
 
 ## Required work order
 
-1. Read the relevant runner, adapter, tests, and existing artifact schema.
-2. Inspect real input data and upstream implementation rather than guessing its
-   schema or behavior.
-3. Preserve existing outputs; use a new run ID or output directory unless the
-   user explicitly requests replacement.
-4. Make the smallest scoped change that preserves upstream behavior.
-5. Add or update regression tests before relying on a live run.
-6. Run mock/unit tests, then a narrowly scoped live smoke when requested.
-7. Validate artifact, graph, status consistency, timing records, cleanup, and
-   absence of credential leakage before broader execution.
-8. Expand to a batch only after its smoke criteria pass and only when requested.
+This is a time-boxed hackathon project. Prioritize a working, demonstrable
+end-to-end path over exhaustive engineering work.
+
+1. Read only the files directly relevant to the requested change.
+2. Inspect one real input or existing artifact when it is needed to understand
+   the current schema or behavior.
+3. Make the smallest change that produces the requested visible or functional
+   result.
+4. Reuse the current architecture and existing outputs rather than redesigning
+   unrelated components.
+5. Validate with the cheapest meaningful check:
+   - UI-only changes: open the generated page and verify the affected examples;
+   - runner or adapter changes: run one narrow smoke example;
+   - pure formatting or copy changes: inspect the resulting file;
+   - high-risk status, grounding, or artifact changes: run the relevant focused
+     tests.
+6. Do not add tests by default. Add or update a focused regression test only
+   when changing status semantics, grounding gates, artifact/graph consistency,
+   parsing of model output, or a previously reproduced failure mode.
+7. Do not run the full test suite unless explicitly requested or the change
+   affects shared core behavior.
+8. Stop after the requested result works. Do not expand the task into cleanup,
+   refactoring, benchmarking, or unrelated diagnosis.
 
 ## Prohibited behavior
 
@@ -89,6 +101,12 @@ See [docs/architecture.md](docs/architecture.md) for component boundaries.
   logical graph steps or create support edges from rejected text.
 - Do not overwrite prior artifacts or start a full benchmark unless requested.
 - Do not perform external search for evidence-restricted dataset tasks.
+- Do not add tests, run the full test suite, or perform broad repository analysis
+  merely to demonstrate diligence.
+- Do not inspect unrelated files when the requested change can be completed from
+  the directly relevant renderer, runner, or artifact.
+- Do not turn a small UI or demo task into an architecture, schema, or cleanup
+  project.
 
 ## Status semantics
 
@@ -125,30 +143,48 @@ and neither was accepted. Operational or adapter failures produce
 See [docs/artifact-schema.md](docs/artifact-schema.md) for the durable schema
 contract.
 
-## Testing and completion criteria
+## Validation and completion criteria
 
-- Add regression coverage for every fixed failure mode and retain existing
-  behavior for other models and datasets.
-- Tests must cover parsing/normalization, grounding gates, status transitions,
-  graph/artifact consistency, refinement separation, and error preservation as
-  applicable.
-- For live OpenAI/Isabelle work, first prove the smallest smoke path. Confirm API
-  call accounting, timings, generated files, process cleanup, and no lingering
-  Isabelle server before considering it complete.
-- A task is complete only when requested outputs exist, can be parsed/rendered,
-  required assertions pass, tests pass, and failures are reported rather than
-  hidden. Do not claim a live run occurred when only mocks were used.
+Use risk-based validation rather than test-first development.
+
+- Do not create unit tests for routine UI, styling, copy, layout, CLI wording,
+  file-path, or one-off demo changes unless the user explicitly requests them.
+- For frontend changes, successful rendering of the target BioASQ examples is
+  the primary validation. Check that the page loads, text is readable, controls
+  work, and no visible JavaScript error prevents rendering.
+- For live pipeline changes, prefer one narrowly scoped smoke run over mocks or
+  broad test suites.
+- Run focused tests only when changing:
+  - grounding or acceptance semantics;
+  - formal, proof, system, or semantic status transitions;
+  - model-output parsing and normalization;
+  - artifact/graph consistency;
+  - timeout, cleanup, resume, or error preservation.
+- Run the full pytest suite only when explicitly requested, before a deliberate
+  release checkpoint, or when shared core behavior has changed substantially.
+- Do not spend time increasing coverage, refactoring tests, or testing unrelated
+  behavior during a demo-critical task.
+- A task is complete when the requested behavior is visibly or operationally
+  confirmed and any important limitation is reported honestly.
+- Never claim a live run, render, or external integration succeeded unless it
+  was actually executed.
 
 ## Final report format
 
-Lead with the outcome. Report only requested fields, normally:
+Keep the final report short and specific to the request.
 
-- semantic result and the separate grounding/formal/acceptance/system statuses;
-- iteration or claim-level results needed to explain that outcome;
-- API calls, token usage when available, and runtime for live runs;
-- timeout/error IDs and cleanup state for batches;
-- pytest command result;
-- clickable paths to changed files and generated artifacts.
+Normally report only:
+
+- whether the requested result works;
+- changed files;
+- the exact command or path used to verify it;
+- any remaining blocker or visible limitation.
+
+Include semantic statuses, API calls, token usage, runtime, cleanup, or test
+results only when they are relevant to the requested task or were actually run.
+
+Do not include unrelated implementation narration, exhaustive file inventories,
+credentials, or raw secret-bearing configuration.
 
 Never include credentials, raw secret-bearing configuration, screenshots unless
 requested, or unrelated implementation narration.
