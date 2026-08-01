@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>STRING · Natural-language reasoning audit</title>
+  <style>
+    :root { font: 14px Inter, ui-sans-serif, system-ui, sans-serif; color: #172033; background: #f4f6fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { padding: 18px 24px; background: #fff; border-bottom: 1px solid #dfe5ef; }
+    h1 { margin: 0 0 5px; font-size: 20px; }
+    h2 { margin: 0 0 10px; font-size: 14px; }
+    h3 { margin: 0 0 8px; font-size: 12px; }
+    p { margin: 0; }
+    .subtle, .helper { color: #667085; font-size: 12px; }
+    main { max-width: 1500px; margin: auto; padding: 18px 24px 36px; }
+    .panel { background: #fff; border: 1px solid #dfe5ef; border-radius: 10px; padding: 14px; }
+    .form-panel { max-width: 980px; }
+    .field { margin-bottom: 14px; }
+    label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 750; }
+    textarea, input, select { width: 100%; border: 1px solid #cbd4e2; border-radius: 7px; padding: 9px 10px; color: #172033; background: #fff; font: inherit; }
+    textarea { min-height: 88px; resize: vertical; line-height: 1.5; }
+    #source-text { min-height: 250px; }
+    textarea:focus, input:focus, select:focus, button:focus-visible { outline: 3px solid #bfdbfe; outline-offset: 1px; border-color: #2563eb; }
+    .helper { margin-top: 5px; line-height: 1.45; }
+    .controls { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 12px; align-items: end; }
+    button { border: 1px solid #172747; border-radius: 7px; padding: 9px 13px; background: #263f73; color: #fff; cursor: pointer; font: inherit; font-weight: 750; }
+    button:hover { background: #1d315b; }
+    button:disabled { cursor: wait; opacity: .65; }
+    .guidance { margin-top: 12px; padding: 10px 12px; border: 1px solid #cbdcf3; border-radius: 8px; background: #eff6ff; color: #334155; font-size: 12px; line-height: 1.45; }
+    .loading { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: #f1f5f9; color: #526071; font-size: 12px; }
+    .spinner { width: 14px; height: 14px; border: 2px solid #cbd5e1; border-top-color: #263f73; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error { margin-top: 12px; padding: 12px 14px; border: 1px solid #e28b91; border-radius: 9px; background: #fff1f2; color: #9f1239; line-height: 1.45; }
+    .results { margin-top: 18px; }
+    .results-header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+    .summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 14px; }
+    .card { min-height: 70px; padding: 10px 12px; overflow: hidden; background: #fff; border: 1px solid #dfe5ef; border-radius: 10px; }
+    .card small { display: block; margin-bottom: 5px; color: #667085; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+    .card b { display: block; overflow-wrap: anywhere; line-height: 1.35; }
+    .result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .wide { grid-column: 1 / -1; }
+    .stack { display: grid; gap: 8px; }
+    .item { padding: 10px 11px; border: 1px solid #e0e5ee; border-radius: 8px; background: #fbfcfe; line-height: 1.5; overflow-wrap: anywhere; }
+    .item strong { display: block; margin-bottom: 3px; color: #263f73; font-size: 11px; }
+    .span { border-left: 3px solid #16a34a; background: #f0fdf4; }
+    .assumption { border-left: 3px solid #f59e0b; background: #fffaf0; }
+    .claim-card { padding: 12px; border: 1px solid #dbe3ef; border-radius: 9px; background: #fbfcfe; }
+    .claim-card h3 { color: #263f73; }
+    .claim-card blockquote { margin: 0 0 9px; padding: 9px 10px; border-left: 3px solid #7568cf; background: #f8f7ff; line-height: 1.5; }
+    .claim-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
+    .claim-detail { margin-top: 7px; font-size: 12px; line-height: 1.45; }
+    .claim-detail strong { display: inline; color: #526071; }
+    .claim-detail .reason { color: #9f1239; }
+    .span-refs { margin-top: 6px; color: #526071; font-size: 11px; }
+    .conclusion-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+    .empty { color: #667085; font-size: 12px; }
+    .status { display: inline-block; padding: 3px 7px; border-radius: 999px; background: #eef2f7; font-size: 10px; font-weight: 800; }
+    .status.accepted, .status.supported, .status.grounded { background: #dcfce7; color: #166534; }
+    .status.rejected { background: #fee2e2; color: #991b1b; }
+    .conclusion { padding: 12px; border-left: 4px solid #263f73; border-radius: 6px; background: #f8fafc; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .graph-wrap { min-height: 340px; overflow: auto; border: 1px solid #e5eaf2; border-radius: 8px; background: #fbfcfe; }
+    .graph-wrap svg { display: block; }
+    .graph-node { cursor: pointer; }
+    .graph-node rect { stroke: #94a3b8; stroke-width: 2; }
+    .graph-node.selected rect { stroke: #0f172a; stroke-width: 3; filter: drop-shadow(0 0 5px #2563eb88); }
+    .graph-id { font-size: 11px; font-weight: 800; fill: #172033; text-anchor: middle; }
+    .graph-text { font-size: 10px; fill: #526071; text-anchor: middle; }
+    .graph-status { font-size: 8px; font-weight: 800; fill: #475569; text-anchor: middle; letter-spacing: .02em; }
+    .graph-edge { fill: none; stroke-width: 2; }
+    .graph-edge-label { font-size: 8px; font-weight: 750; text-anchor: middle; paint-order: stroke; stroke: #fff; stroke-width: 4px; }
+    .detail { margin-top: 10px; padding: 10px 11px; border-radius: 8px; background: #f8fafc; color: #526071; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+    @media (max-width: 800px) {
+      header, main { padding-left: 14px; padding-right: 14px; }
+      .controls, .result-grid { grid-template-columns: 1fr; }
+      .wide { grid-column: auto; }
+      .summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>STRING · Natural-language reasoning audit</h1>
+    <div class="subtle">Paste prose to inspect claims, evidence, assumptions, and reasoning structure.</div>
+  </header>
+
+  <main>
+    <section class="panel form-panel" aria-labelledby="form-title">
+      <h2 id="form-title">Start an audit</h2>
+      <form id="audit-form">
+        <div class="field">
+          <label for="source-text">Source text</label>
+          <textarea id="source-text" required placeholder="Paste lecture notes, article excerpts, paper paragraphs, or other reasoning-heavy prose here."></textarea>
+        </div>
+        <div class="field">
+          <label for="target-claim">Claim to audit (optional)</label>
+          <textarea id="target-claim" placeholder="e.g. The intervention caused the observed improvement."></textarea>
+          <div class="helper">Leave blank to let STRING extract the main claims automatically.</div>
+        </div>
+        <div class="controls">
+          <div class="field" style="margin-bottom:0">
+            <label for="audit-focus">Audit focus (optional)</label>
+            <input id="audit-focus" placeholder="e.g. causality, hidden assumptions, temporal order, overstatement">
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label for="model">Model</label>
+            <select id="model">
+              <option value="gpt-4.1" selected>gpt-4.1</option>
+              <option value="gpt-5.6">gpt-5.6</option>
+            </select>
+          </div>
+        </div>
+        <div class="guidance">This tool audits reasoning structure within the supplied text. It does not verify external medical truth or replace clinical judgment.</div>
+        <button id="submit-audit" type="submit" style="margin-top:14px">Generate reasoning audit</button>
+        <div id="loading" class="loading" hidden><span class="spinner" aria-hidden="true"></span><span>Generating reasoning audit…</span></div>
+        <div id="error" class="error" role="alert" hidden></div>
+      </form>
+    </section>
+
+    <section id="results" class="results" hidden aria-live="polite">
+      <div class="results-header">
+        <h2>Reasoning audit</h2>
+        <div id="result-meta" class="subtle"></div>
+      </div>
+      <div id="summary" class="summary"></div>
+      <div class="result-grid">
+        <section class="panel"><h2>Extracted claims</h2><div id="claims" class="stack"></div></section>
+        <section class="panel"><h2>Supporting text spans</h2><div id="spans" class="stack"></div></section>
+        <section class="panel"><h2>Assumptions</h2><div id="assumptions" class="stack"></div></section>
+        <section class="panel"><h2>Refined claims</h2><div id="refined-claims" class="stack"></div></section>
+        <section class="panel wide"><h2>Conclusion</h2><div id="conclusion" class="conclusion"></div></section>
+        <section class="panel wide"><h2>Reasoning graph</h2><div id="graph" class="graph-wrap"><div class="empty" style="padding:14px">Graph data will appear here after a successful audit.</div></div><div id="node-detail" class="detail" hidden></div></section>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const AUDIT_ENDPOINT = "/api/audit";
+    const $ = id => document.getElementById(id);
+    const value = item => item === null || item === undefined ? "—" : String(item);
+    const escapeHtml = text => { const node = document.createElement("span"); node.textContent = value(text); return node.innerHTML; };
+
+    function textOf(item) {
+      if (item === null || item === undefined) return "—";
+      if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") return String(item);
+      return item.text || item.claim || item.label || item.content || item.description || "—";
+    }
+
+    function listOf(...candidates) {
+      return candidates.find(item => Array.isArray(item) && item.length) || candidates.find(item => Array.isArray(item)) || [];
+    }
+
+    function statusClass(status) {
+      return String(status || "").toLowerCase().replace(/[^a-z]+/g, "-");
+    }
+
+    function assumptionTexts(claim) {
+      const values = [];
+      const bridge = claim?.bridge_assumption || {};
+      if (bridge.text) values.push({ text: bridge.text, status: bridge.status });
+      for (const text of Array.isArray(claim?.assumptions) ? claim.assumptions : []) {
+        if (text) values.push({ text, status: bridge.status || "UNSUPPORTED" });
+      }
+      return values.filter((item, index, all) => all.findIndex(other => other.text === item.text) === index);
+    }
+
+    function renderItems(containerId, items, className = "") {
+      const container = $(containerId);
+      if (!items.length) { container.innerHTML = '<div class="empty">No items were returned.</div>'; return; }
+      container.innerHTML = items.map((item, index) => {
+        const status = typeof item === "object" && item ? item.grounding_status || item.acceptance_status || item.status : "";
+        const badge = status ? ` <span class="status ${statusClass(status)}">${escapeHtml(status)}</span>` : "";
+        const id = typeof item === "object" && item ? item.id || item.span_id || `${index + 1}` : `${index + 1}`;
+        const source = item.claim_id ? ` <span class="subtle">from ${escapeHtml(item.claim_id)}</span>` : "";
+        return `<div class="item ${className}"><strong>${escapeHtml(id)}${badge}${source}</strong>${escapeHtml(textOf(item))}</div>`;
+      }).join("");
+    }
+
+    function resultParts(data) {
+      const artifact = data.artifact || data;
+      const conclusion = data.conclusion || artifact.conclusion || artifact.final_conclusion || artifact.final_accepted_answer;
+      return {
+        artifact,
+        claims: listOf(data.extracted_claims, artifact.extracted_claims, data.claims, artifact.claims, artifact.grounding),
+        spans: listOf(data.supporting_text_spans, artifact.supporting_text_spans, data.supporting_spans, artifact.supporting_spans, data.evidence, artifact.evidence, artifact.input?.source_spans),
+        assumptions: listOf(data.assumptions, artifact.assumptions, artifact.grounding?.flatMap(claim => assumptionTexts(claim).map((item, index) => ({ id: `${claim.claim_id}-assumption-${index + 1}`, claim_id: claim.claim_id, text: item.text, status: item.status })))),
+        refinedClaims: listOf(data.refined_claims, artifact.refined_claims, artifact.refinement?.refined_claims, artifact.refined?.claims),
+        grounding: data.grounding_status || artifact.grounding_status || artifact.conclusion_status?.grounding_status || "—",
+        conclusionStatus: artifact.conclusion_status || data.conclusion_status || {},
+        conclusion: typeof conclusion === "object" ? textOf(conclusion) : conclusion,
+        graph: data.graph || artifact.graph || artifact.reasoning_graph
+      };
+    }
+
+    function summaryCard(label, content) {
+      return `<div class="card"><small>${escapeHtml(label)}</small><b>${escapeHtml(content)}</b></div>`;
+    }
+
+    function shortGraphText(node) {
+      const words = textOf(node).replace(/\s+/g, " ").trim().split(" ").slice(0, 5).join(" ");
+      return (words.length > 34 ? `${words.slice(0, 31)}…` : words) || "—";
+    }
+
+    function renderGraph(graph) {
+      const wrap = $("graph");
+      const sourceNodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+      const edges = Array.isArray(graph?.edges) ? graph.edges : [];
+      const lane = { EVIDENCE_SNIPPET: 0, ANSWER_CLAIM: 1, ASSUMPTION: 2, INTERMEDIATE_INFERENCE: 2, REFINED_CLAIM: 3, CONCLUSION: 4 };
+      const colors = { EVIDENCE_SNIPPET: "#e5e7eb", ANSWER_CLAIM: "#ede9fe", ASSUMPTION: "#ffedd5", INTERMEDIATE_INFERENCE: "#ccfbf1", REFINED_CLAIM: "#ccfbf1", CONCLUSION: "#dcfce7" };
+      const nodes = sourceNodes.filter(node => lane[node.type] !== undefined).map(node => ({ ...node }));
+      if (!nodes.length) {
+        wrap.innerHTML = '<div class="empty" style="padding:14px">No graph was included in the response.</div>';
+        $("node-detail").hidden = true;
+        return;
+      }
+      const counts = {};
+      const laneNodes = [[], [], [], [], []];
+      nodes.forEach(node => {
+        const type = node.type || "NODE";
+        counts[type] = (counts[type] || 0) + 1;
+        const prefixes = { EVIDENCE_SNIPPET: "S", ANSWER_CLAIM: "C", ASSUMPTION: "A", INTERMEDIATE_INFERENCE: "I", REFINED_CLAIM: "RC" };
+        node._label = type === "CONCLUSION" ? "Final" : `${prefixes[type] || "N"}${counts[type]}`;
+        node._lane = lane[type] ?? 2;
+        laneNodes[node._lane].push(node);
+      });
+      const nodeWidth = 168, nodeHeight = 64, laneGap = 250, rowGap = 94;
+      const maxRows = Math.max(...laneNodes.map(items => items.length), 1);
+      const width = 110 + 4 * laneGap + nodeWidth / 2;
+      const height = Math.max(360, 70 + maxRows * rowGap);
+      laneNodes.forEach((items, laneIndex) => items.forEach((node, index) => {
+        node._x = 90 + laneIndex * laneGap;
+        node._y = 45 + index * rowGap + (maxRows - items.length) * rowGap / 2;
+      }));
+      const byId = new Map(nodes.map(node => [node.id, node]));
+      const edgeColor = { supports: "#2563eb", grounded_in: "#16a34a", revised_to: "#f59e0b", depends_on: "#9333ea" };
+      const edgeLabels = { supports: "supports", grounded_in: "grounded in", revised_to: "revised to", depends_on: "depends on" };
+      let svg = '<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#64748b"></path></marker></defs><g class="graph-edges">';
+      edges.forEach(edge => {
+        const source = byId.get(edge.source), target = byId.get(edge.target);
+        if (!source || !target || !edgeLabels[edge.type]) return;
+        const color = edgeColor[edge.type] || "#64748b";
+        const x1 = source._x + nodeWidth / 2, x2 = target._x - nodeWidth / 2, y1 = source._y, y2 = target._y;
+        const bend = Math.max(55, (x2 - x1) / 2);
+        svg += `<path class="graph-edge" d="M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}" stroke="${color}" marker-end="url(#arrow)"></path>`;
+        svg += `<text class="graph-edge-label" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 5}" fill="${color}">${escapeHtml(edgeLabels[edge.type])}</text>`;
+      });
+      svg += "</g><g class=\"graph-nodes\">";
+      nodes.forEach(node => {
+        const preview = shortGraphText(node);
+        const status = node.acceptance_status || node.grounding_status || node.status || "";
+        svg += `<g class="graph-node" data-node-id="${escapeHtml(node.id)}"><rect x="${node._x - nodeWidth / 2}" y="${node._y - nodeHeight / 2}" width="${nodeWidth}" height="${nodeHeight}" rx="9" fill="${colors[node.type] || "#fff"}" stroke="${status === "REJECTED" ? "#dc2626" : "#94a3b8"}"></rect><text class="graph-id" x="${node._x}" y="${node._y - 17}">${escapeHtml(node._label)}</text><text class="graph-text" textLength="140" lengthAdjust="spacingAndGlyphs" x="${node._x}" y="${node._y + 3}">${escapeHtml(preview)}</text><text class="graph-status" textLength="140" lengthAdjust="spacingAndGlyphs" x="${node._x}" y="${node._y + 23}">${escapeHtml(status)}</text></g>`;
+      });
+      svg += "</g>";
+      wrap.innerHTML = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Layered reasoning graph">${svg}</svg>`;
+      wrap.querySelectorAll(".graph-node").forEach(nodeElement => nodeElement.addEventListener("click", () => {
+        const node = byId.get(nodeElement.dataset.nodeId);
+        wrap.querySelectorAll(".graph-node").forEach(item => item.classList.remove("selected"));
+        nodeElement.classList.add("selected");
+        $("node-detail").hidden = false;
+        $("node-detail").textContent = `${node._label}\n${textOf(node)}\nStatus: ${node.acceptance_status || node.grounding_status || node.status || "—"}`;
+      }));
+    }
+
+    function renderClaimCards(containerId, claims, refinedClaims) {
+      const container = $(containerId);
+      if (!claims.length) { container.innerHTML = '<div class="empty">No claims were returned.</div>'; return; }
+      container.innerHTML = claims.map((claim, index) => {
+        const claimId = claim.claim_id || `claim-${index + 1}`;
+        const refined = refinedClaims.find(item => item.previous_claim_id === claimId || item.claim_id === claimId);
+        const assumptions = assumptionTexts(claim);
+        const reason = claim.rationale || claim.overstatement || claim.contradiction || "No additional reason was returned.";
+        const evidence = (claim.evidence_ids || []).join(", ") || "None";
+        return `<article class="claim-card"><h3>Claim ${index + 1}</h3><blockquote>${escapeHtml(claim.text)}</blockquote><div class="claim-meta"><span class="status ${statusClass(claim.grounding_status)}">${escapeHtml(claim.grounding_status || "UNKNOWN")}</span><span class="status ${statusClass(claim.acceptance_status)}">${escapeHtml(claim.acceptance_status || "NOT_EVALUATED")}</span></div><div class="claim-detail"><strong>Supporting spans:</strong> ${escapeHtml(evidence)}</div><div class="claim-detail"><strong>Why:</strong> <span class="${claim.acceptance_status === "REJECTED" ? "reason" : ""}">${escapeHtml(reason)}</span></div>${assumptions.length ? `<div class="claim-detail"><strong>Hidden assumption:</strong> ${escapeHtml(assumptions.map(item => item.text).join("; "))}</div>` : ""}${refined ? `<div class="claim-detail"><strong>Refined claim:</strong> ${escapeHtml(refined.text)}</div>` : ""}</article>`;
+      }).join("");
+    }
+
+    function renderSupportingSpans(containerId, spans, claims) {
+      const references = new Map(spans.map(span => [span.id, []]));
+      claims.forEach((claim, index) => (claim.evidence_ids || []).forEach(id => {
+        if (!references.has(id)) references.set(id, []);
+        references.get(id).push(`Claim ${index + 1}`);
+      }));
+      const container = $(containerId);
+      if (!spans.length) { container.innerHTML = '<div class="empty">No source spans were returned.</div>'; return; }
+      container.innerHTML = spans.map(span => `<div class="item span"><strong>${escapeHtml(span.id)}</strong>${escapeHtml(span.text)}<div class="span-refs">Referenced by: ${escapeHtml((references.get(span.id) || []).join(", ") || "No extracted claim")}</div></div>`).join("");
+    }
+
+    function renderAuditResult(data) {
+      const result = resultParts(data);
+      const effectiveClaims = result.refinedClaims.length ? result.refinedClaims : result.claims;
+      const acceptedClaims = effectiveClaims.filter(claim => claim.acceptance_status === "ACCEPTED");
+      const rejectedClaims = result.claims.filter(claim => claim.acceptance_status === "REJECTED");
+      $("results").hidden = false;
+      $("result-meta").textContent = result.artifact.run_id ? `Run ${result.artifact.run_id}` : "Response received";
+      $("summary").innerHTML = [
+        summaryCard("Extracted claims", result.claims.length),
+        summaryCard("Supporting spans", result.spans.length),
+        summaryCard("Accepted claims", acceptedClaims.length),
+        summaryCard("Rejected claims", rejectedClaims.length),
+        summaryCard("Grounding status", result.grounding)
+      ].join("");
+      renderClaimCards("claims", result.claims, result.refinedClaims);
+      renderSupportingSpans("spans", result.spans, result.claims);
+      renderItems("assumptions", result.assumptions, "assumption");
+      renderItems("refined-claims", result.refinedClaims);
+      const assumptionState = result.assumptions.length ? "Assumptions remain" : "No assumptions returned";
+      $("conclusion").innerHTML = `<div class="conclusion-meta"><span class="status ${statusClass(result.conclusionStatus.grounding_status)}">Grounding: ${escapeHtml(result.conclusionStatus.grounding_status || result.grounding)}</span><span class="status ${statusClass(result.conclusionStatus.acceptance_status)}">Acceptance: ${escapeHtml(result.conclusionStatus.acceptance_status || "NOT_EVALUATED")}</span><span class="status">${acceptedClaims.length} accepted claim${acceptedClaims.length === 1 ? "" : "s"} used</span><span class="status">${rejectedClaims.length} rejected claim${rejectedClaims.length === 1 ? "" : "s"} excluded</span><span class="status">${escapeHtml(assumptionState)}</span></div><div>${escapeHtml(result.conclusion)}</div>`;
+      renderGraph(result.graph);
+      $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function formPayload() {
+      return {
+        source_text: $("source-text").value,
+        target_claim: $("target-claim").value.trim() || null,
+        audit_focus: $("audit-focus").value.trim() || null,
+        model: $("model").value
+      };
+    }
+
+    async function submitAudit(payload) {
+      if (!AUDIT_ENDPOINT) {
+        throw new Error("No audit backend endpoint is configured yet. Your text is still in the form; set AUDIT_ENDPOINT in this page to connect STRING.");
+      }
+      const response = await fetch(AUDIT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(`Audit request failed (${response.status})`);
+      return response.json();
+    }
+
+    $("audit-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!$("source-text").value.trim()) return;
+      const button = $("submit-audit");
+      $("error").hidden = true;
+      $("loading").hidden = false;
+      button.disabled = true;
+      try {
+        renderAuditResult(await submitAudit(formPayload()));
+      } catch (error) {
+        // Do not clear any fields: failed submissions must remain editable and retryable.
+        $("error").textContent = error.message || "The audit could not be generated.";
+        $("error").hidden = false;
+      } finally {
+        $("loading").hidden = true;
+        button.disabled = false;
+      }
+    });
+
+    window.STRINGNaturalLanguageAudit = { formPayload, submitAudit, renderAuditResult };
+  </script>
+</body>
+</html>
