@@ -1,19 +1,29 @@
-"""Adapters connecting STRING data models to external verification systems."""
+"""Public STRING integration API."""
 
 from .explanation_refiner import (
-    NaturalLanguageInput,
-    QuestionFormatError,
-    VerificationResult,
-    VerificationStatus,
-    extract_query_statement,
-    verify_positive,
+    CredentialConfigurationError,
+    CleanupResult,
+    ExplanationRefiner,
+    InitialCandidate,
+    IterationArtifact,
+    RunArtifact,
+    RunStatus,
+    UpstreamBindings,
+    artifact_to_dict,
+    artifact_to_json,
+    run_explanation_refiner,
 )
 
 __all__ = [
-    "NaturalLanguageInput",
-    "QuestionFormatError",
-    "VerificationResult",
-    "VerificationStatus",
-    "extract_query_statement",
-    "verify_positive",
+    "CleanupResult",
+    "ExplanationRefiner",
+    "CredentialConfigurationError",
+    "InitialCandidate",
+    "IterationArtifact",
+    "RunArtifact",
+    "RunStatus",
+    "UpstreamBindings",
+    "artifact_to_dict",
+    "artifact_to_json",
+    "run_explanation_refiner",
 ]

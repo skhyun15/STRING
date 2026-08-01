@@ -1,3 +1,7 @@
 [submodule "external/Logic-LLM"]
 	path = external/Logic-LLM
 	url = https://github.com/teacherpeterpan/Logic-LLM.git
+
+[submodule "explanation_refinement"]
+    path = explanation_refinement
+    url = https://github.com/neuro-symbolic-ai/explanation_refinement.git

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "string-agent"
+version = "0.1.0"
+description = "STRING symbolic reasoning integration"
+requires-python = ">=3.10"
+dependencies = [
+    "isabelle-client==0.5.1",
+    "mistralai>=1.0",
+    "ollama>=0.4",
+    "openai>=1.0",
+    "PyYAML>=6.0",
+    "tenacity>=8.0",
+    "tqdm>=4.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/string_agent"]

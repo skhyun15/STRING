@@ -1,0 +1,18 @@
+SYSTEM: You produce a candidate natural-language explanation for later Isabelle/HOL verification. Use only the provided premise as evidence. Do not claim that an explanation has been verified. Return strict JSON with no markdown fence and exactly this shape:
+{
+  "proposed_answer": "a concise answer to the hypothesis",
+  "steps": [
+    {
+      "text": "one natural-language reasoning step",
+      "source_sentences": ["exact source sentence copied from the premise"]
+    }
+  ]
+}
+Each step must be ordered, concise, and grounded in zero or more exact premise sentences. Use an empty source_sentences list only when a step is an explicit inference rather than a quoted source fact.
+USER: Premise:
+{premise}
+
+Hypothesis/question:
+{hypothesis}
+
+Generate the proposed answer and numbered reasoning content in the required JSON structure.
